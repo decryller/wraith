@@ -12,6 +12,11 @@ RNG powered by [pcg-cpp](https://github.com/imneme/pcg-cpp)
 ### Dependencies
 - libx11
 
+### Supported versions
+- Forge 1.7.10
+- Lunar 1.7.10
+- Lunar 1.8.9
+
 ### Downloading Wraith
 **Quick Way:**
 ```
@@ -38,10 +43,6 @@ su root
 The session's opening and closing dates will be stored in the journals, but commands ran in the session won't.
 ![switching user to root](https://i.imgur.com/FeSFzRD.png)
 ![no traces of wraith](https://i.imgur.com/i7ZFyXs.png)
-### Supported versions
-- Forge 1.7.10
-- Lunar 1.7.10
-- Lunar 1.8.9
 
 ### Contact
 E-mail: decryller@gmail.com\
