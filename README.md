@@ -20,7 +20,7 @@ RNG powered by [pcg-cpp](https://github.com/imneme/pcg-cpp)
 ### Downloading Wraith
 **Quick Way:**
 ```
-curl https://github.com/decryller/wraith/releases/latest/wraith.AppImage -o wraith.AppImage
+curl -LJ0 https://github.com/decryller/wraith/releases/download/v1.0-stable/wraith.AppImage -o wraith.AppImage
 chmod +x wraith.AppImage
 ```
 **Compiling from source:** 
