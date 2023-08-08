@@ -304,7 +304,7 @@ int main(int argc, char** argv) {
 			if (RVMT::Button("Self-Destruct")) {
 				// For people who compiled it from source. | Deletes the whole directory if it's called "wraith".
 				if (std::filesystem::current_path().filename() == "wraith") 
-					std::filesystem::remove_all(std::filesystem::current_path().parent_path());
+					std::filesystem::remove_all(std::filesystem::current_path());
 
 				else // For people who just downloaded the AppImage. | Delete the binary regardless of the name.
 					std::filesystem::remove(std::filesystem::current_path() / &argv[0][2]);
