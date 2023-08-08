@@ -1,5 +1,6 @@
 #include "libs/alma/alma.hpp"
 #include "libs/rvmt/rvmt.hpp"
+#include <chrono>
 #include <cmath>
 #include <thread>
 #include <atomic>
@@ -88,8 +89,13 @@ bool isMouseButtonHeld(unsigned int mouseButton);
 bool isHotbarEnabled(bool* var);
 bool isActiveWindowMinecraft();
 
-int main() {
+enum GUIPages {
+	GUIPages_COMBAT,
+	GUIPages_MISC,
+};
+GUIPages GUIPages_CURRENT;
 
+int main(int argc, char** argv) {
 	// === Check for root privileges.
 	std::ifstream file("/proc/self/status", std::ios::binary | std::ios::in);
 	std::stringstream sstream;
@@ -149,7 +155,7 @@ int main() {
 		return 1;
 
 	if (!alma::openProcess(clientPID)) // Can't access the pid's memory file
-		return 2;
+		return 1;
 
 	// === Check addresses length.
 	std::vector<memoryPage> _StartupProcessPages = alma::getMemoryPages(memoryPermission_NONE, memoryPermission_NONE);
@@ -175,7 +181,6 @@ int main() {
 	std::thread rightclickerThread(&rightclickerThreadFunc);
 	rightclickerThread.detach();
 
-
     RVMT::Start();
 	
     while (!destructing.load()) {
@@ -189,110 +194,137 @@ int main() {
         const unsigned short rowCount = RVMT::internal::rowCount;
         const unsigned short colCount = RVMT::internal::colCount;
 
-    	RVMT::DrawBox(1, 0, 40, 10); // Autoclicker box
-		RVMT::DrawHSeparator(1, 2, 40); // Autoclicker separator
+		switch (GUIPages_CURRENT) {
+		case GUIPages_COMBAT:
+			RVMT::DrawBox(1, 0, 40, 10); // Autoclicker box
+			RVMT::DrawHSeparator(1, 2, 40); // Autoclicker separator
 
-    	RVMT::DrawBox(44, 0, 40, 10); // Rightclicker box
-		RVMT::DrawHSeparator(44, 2, 40); // Rightclicker separator
+			RVMT::DrawBox(44, 0, 40, 10); // Rightclicker box
+			RVMT::DrawHSeparator(44, 2, 40); // Rightclicker separator
 
-		RVMT::DrawBox(1, 12, 40, 10); // Reach box
-		RVMT::DrawHSeparator(1, 14, 40); // Reach separator
+			RVMT::DrawBox(1, 12, 40, 10); // Reach box
+			RVMT::DrawHSeparator(1, 14, 40); // Reach separator
 
-		// === Autoclicker
-        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
-        RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
-		RVMT::Text("Autoclicker ");
+			// === Autoclicker
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
+			RVMT::Text("Autoclicker ");
 
-		RVMT::SameLine();
-		RVMT::Checkbox("[ON]", "[OFF]", &autoclickerEnabled);
+			RVMT::SameLine();
+			RVMT::Checkbox("[ON]", "[OFF]", &autoclickerEnabled);
 
-        RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
-		RVMT::Text("CPS: ");
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+			RVMT::Text("CPS: ");
 
-		RVMT::SameLine();
-		RVMT::Slider("lCPS slider", 20, 10.0, 20.0, &lCPS);
+			RVMT::SameLine();
+			RVMT::Slider("lCPS slider", 20, 10.0, 20.0, &lCPS);
 
-		RVMT::SameLine();
-		RVMT::Text(" %.2f", lCPS);
+			RVMT::SameLine();
+			RVMT::Text(" %.2f", lCPS);
 
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Click on containers ");
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Click on containers ");
 
-		RVMT::SameLine();
-		RVMT::Checkbox("[Enabled]", "[Disabled]", &autoclickerContainerClicks);
+			RVMT::SameLine();
+			RVMT::Checkbox("[Enabled]", "[Disabled]", &autoclickerContainerClicks);
 
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Allowed hotbar slots");
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Allowed hotbar slots");
 
-		for (int i = 0; i < 9; i++) {
-			RVMT::Checkbox("[X] ", "[-] ", &autoclickerAllowedSlots[i]);
-			if (i < 8)
-				RVMT::SameLine();
-		}
+			for (int i = 0; i < 9; i++) {
+				RVMT::Checkbox("[X] ", "[-] ", &autoclickerAllowedSlots[i]);
+				if (i < 8)
+					RVMT::SameLine();
+			}
 
-		// === Rightclicker
-		RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 46);
-        RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
-		RVMT::Text("Rightclicker ");
+			// === Rightclicker
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 46);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
+			RVMT::Text("Rightclicker ");
 
-		RVMT::SameLine();
-		RVMT::Checkbox("[ON]", "[OFF]", &rightclickerEnabled);
+			RVMT::SameLine();
+			RVMT::Checkbox("[ON]", "[OFF]", &rightclickerEnabled);
+			
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+			RVMT::Text("Delay: ");
+
+			// Will make an int slider in future RVMT releases.
+			RVMT::SameLine();
+			RVMT::Slider("delayRCPS_SLIDER slider", 20, 100, 1000, &rightDelay);
+
+			RVMT::SameLine();
+			RVMT::Text(" %.0fms", rightDelay);
+
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Allowed hotbar slots");
+
+			for (int i = 0; i < 9; i++) {
+				RVMT::Checkbox("[X] ", "[-] ", &rightclickerAllowedSlots[i]);
+				if (i < 8)
+					RVMT::SameLine();
+			}
+
+			// === Reach
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 13);
+			RVMT::Text("Reach ");
+
+			RVMT::SameLine();
+			RVMT::Checkbox("[ON]", "[OFF]", &reachEnabled);
+			
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+
+			RVMT::Text("Reach: ");
+
+			RVMT::SameLine();
+			RVMT::Slider("maxReach slider", 18, 3.0, 6.0, &reachVal);
+
+			RVMT::SameLine();
+			RVMT::Text(" %.3f", reachVal);
+
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Only while sprinting ");
+
+			RVMT::SameLine();
+			RVMT::Checkbox("[Enabled]", "[Disabled]", &reachSprintOnly);
+
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Allowed hotbar slots");
+
+			for (int i = 0; i < 9; i++) {
+				RVMT::Checkbox("[X] ", "[-] ", &reachAllowedSlots[i]);
+				if (i < 8)
+					RVMT::SameLine();
+			}
+			break;
 		
-        RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
-		RVMT::Text("Delay: ");
+		case GUIPages_MISC:
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 1);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 0);
+			if (RVMT::Button("Self-Destruct")) {
+				// For people who compiled it from source. | Deletes the whole directory if it's called "wraith".
+				if (std::filesystem::current_path().filename() == "wraith") 
+					std::filesystem::remove_all(std::filesystem::current_path().parent_path());
 
-		// Will make an int slider in future RVMT releases.
-		RVMT::SameLine();
-		RVMT::Slider("delayRCPS_SLIDER slider", 20, 100, 1000, &rightDelay);
-
-		RVMT::SameLine();
-		RVMT::Text(" %.0fms", rightDelay);
-
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Allowed hotbar slots");
-
-		for (int i = 0; i < 9; i++) {
-			RVMT::Checkbox("[X] ", "[-] ", &rightclickerAllowedSlots[i]);
-			if (i < 8)
-				RVMT::SameLine();
+				else // For people who just downloaded the AppImage. | Delete the binary regardless of the name.
+					std::filesystem::remove(std::filesystem::current_path() / &argv[0][2]);
+				
+				destructing.store(true);
+			};
+			break;
 		}
 
-		// === Reach
-		RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
-        RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 13);
-		RVMT::Text("Reach ");
-
-		RVMT::SameLine();
-		RVMT::Checkbox("[ON]", "[OFF]", &reachEnabled);
-		
-        RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
-
-		RVMT::Text("Reach: ");
-
-		RVMT::SameLine();
-		RVMT::Slider("maxReach slider", 18, 3.0, 6.0, &reachVal);
-
-		RVMT::SameLine();
-		RVMT::Text(" %.3f", reachVal);
-
-        RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Only while sprinting ");
-
-		RVMT::SameLine();
-		RVMT::Checkbox("[Enabled]", "[Disabled]", &reachSprintOnly);
-
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Allowed hotbar slots");
-
-		for (int i = 0; i < 9; i++) {
-			RVMT::Checkbox("[X] ", "[-] ", &reachAllowedSlots[i]);
-			if (i < 8)
-				RVMT::SameLine();
-		}
-
-        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, colCount - 8);
+        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 0);
         RVMT::SetCursorY(NewCursorPos_ABSOLUTE, rowCount - 3);
+		if (RVMT::Button("Combat"))
+			GUIPages_CURRENT = GUIPages_COMBAT;
 
+		RVMT::SameLine();
+		if (RVMT::Button("Misc"))
+			GUIPages_CURRENT = GUIPages_MISC;
+
+		RVMT::SameLine();
+        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, colCount - 8);
         if (RVMT::Button(" Quit "))
             destructing.store(true);
 		
@@ -387,6 +419,12 @@ void reachThreadFunc() {
 
     while (!destructing.load()) {
         if (!reachEnabled) {
+			if (reachAddress != 0xBAD &&
+				blockReachAddress != 0xBAD &&
+				livelinessAddress != 0xBAD) {
+				alma::memWrite(blockReachAddress, varToHex(defaultBlockReach, 8));
+				alma::memWrite(reachAddress, defaultReachMemSig);
+			}
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
