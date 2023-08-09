@@ -1,3 +1,4 @@
+**Any actions taken based on the provided code and guidance herein are undertaken at the sole discretion and responsibility of the individual who performs them.**
 ## About Wraith
 Wraith is an open source fully external Minecraft Ghost Client for Linux.\
 Memory operations powered by [alma](https://github.com/decryller/alma)\
@@ -14,6 +15,7 @@ RNG powered by [pcg-cpp](https://github.com/imneme/pcg-cpp)
 
 ### Supported versions
 - Forge 1.7.10
+- Forge 1.8.9
 - Lunar 1.7.10
 - Lunar 1.8.9
 
