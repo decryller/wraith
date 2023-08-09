@@ -1,5 +1,6 @@
 #include "libs/alma/alma.hpp"
 #include "libs/rvmt/rvmt.hpp"
+#include <chrono>
 #include <cmath>
 #include <thread>
 #include <atomic>
@@ -14,6 +15,7 @@ using RVMT::internal::rootWindow;
 enum clientType {
     clientType_UNKNOWN,
 	clientType_FORGE1, // Forge 1.7.10
+	clientType_FORGE2, // Forge 1.8.9
     clientType_LUNAR1, // Lunar 1.7.10
     clientType_LUNAR2 // Lunar 1.8.9
 };
@@ -88,16 +90,23 @@ bool isMouseButtonHeld(unsigned int mouseButton);
 bool isHotbarEnabled(bool* var);
 bool isActiveWindowMinecraft();
 
-int main() {
+enum GUIPages {
+	GUIPages_COMBAT,
+	GUIPages_MISC,
+};
+GUIPages GUIPages_CURRENT;
 
+int main(int argc, char** argv) {
 	// === Check for root privileges.
 	std::ifstream file("/proc/self/status", std::ios::binary | std::ios::in);
 	std::stringstream sstream;
 	sstream << file.rdbuf();
 
 	// From what i've read, this condition will work on most distros.
-	if (sstream.str().find("Uid:\t0\t0\t0\t0") == std::string::npos)
+	if (sstream.str().find("Uid:\t0\t0\t0\t0") == std::string::npos) {
+		std::cout << "No root privileges. Remember to switch to the root user.";
 		return 1; // No root privileges
+	}
 
 	// === Automatically detect Minecraft's PID
 	unsigned int clientPID = 0;
@@ -134,7 +143,7 @@ int main() {
 				}
 			}
 
-			// Check for forge.
+			// Check for Forge 1.7.10.
 			if (string.find("minecraftforge/forge/1.7.10") != std::string::npos) {
 				clientType_CURRENT = clientType_FORGE1;
 				clientType_TITLE = "Minecraft 1.7.10";
@@ -142,14 +151,26 @@ int main() {
 				break;
 			}
 
+			// Check for Forge 1.8.9.
+			if (string.find("minecraftforge/forge/1.8.9") != std::string::npos) {
+				clientType_CURRENT = clientType_FORGE2;
+				clientType_TITLE = "Minecraft 1.8.9";
+				clientPID = std::stoi(folder.path().filename().string());
+				break;
+			}
+
 		}
 	}
 
-	if (clientPID == 0) // Minecraft couldn't be detected automatically.
+	if (clientPID == 0) { // Minecraft couldn't be detected automatically.
+		std::cout << "Couldn't find a compatible Minecraft version.";
 		return 1;
+	}
 
-	if (!alma::openProcess(clientPID)) // Can't access the pid's memory file
-		return 2;
+	if (!alma::openProcess(clientPID)) { // Can't access the pid's memory file
+		std::cout << "Error while opening Minecraft's memory file.";
+		return 1;
+	}
 
 	// === Check addresses length.
 	std::vector<memoryPage> _StartupProcessPages = alma::getMemoryPages(memoryPermission_NONE, memoryPermission_NONE);
@@ -175,7 +196,6 @@ int main() {
 	std::thread rightclickerThread(&rightclickerThreadFunc);
 	rightclickerThread.detach();
 
-
     RVMT::Start();
 	
     while (!destructing.load()) {
@@ -189,110 +209,137 @@ int main() {
         const unsigned short rowCount = RVMT::internal::rowCount;
         const unsigned short colCount = RVMT::internal::colCount;
 
-    	RVMT::DrawBox(1, 0, 40, 10); // Autoclicker box
-		RVMT::DrawHSeparator(1, 2, 40); // Autoclicker separator
+		switch (GUIPages_CURRENT) {
+		case GUIPages_COMBAT:
+			RVMT::DrawBox(1, 0, 40, 10); // Autoclicker box
+			RVMT::DrawHSeparator(1, 2, 40); // Autoclicker separator
 
-    	RVMT::DrawBox(44, 0, 40, 10); // Rightclicker box
-		RVMT::DrawHSeparator(44, 2, 40); // Rightclicker separator
+			RVMT::DrawBox(44, 0, 40, 10); // Rightclicker box
+			RVMT::DrawHSeparator(44, 2, 40); // Rightclicker separator
 
-		RVMT::DrawBox(1, 12, 40, 10); // Reach box
-		RVMT::DrawHSeparator(1, 14, 40); // Reach separator
+			RVMT::DrawBox(1, 12, 40, 10); // Reach box
+			RVMT::DrawHSeparator(1, 14, 40); // Reach separator
 
-		// === Autoclicker
-        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
-        RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
-		RVMT::Text("Autoclicker ");
+			// === Autoclicker
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
+			RVMT::Text("Autoclicker ");
 
-		RVMT::SameLine();
-		RVMT::Checkbox("[ON]", "[OFF]", &autoclickerEnabled);
+			RVMT::SameLine();
+			RVMT::Checkbox("[ON]", "[OFF]", &autoclickerEnabled);
 
-        RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
-		RVMT::Text("CPS: ");
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+			RVMT::Text("CPS: ");
 
-		RVMT::SameLine();
-		RVMT::Slider("lCPS slider", 20, 10.0, 20.0, &lCPS);
+			RVMT::SameLine();
+			RVMT::Slider("lCPS slider", 20, 10.0, 20.0, &lCPS);
 
-		RVMT::SameLine();
-		RVMT::Text(" %.2f", lCPS);
+			RVMT::SameLine();
+			RVMT::Text(" %.2f", lCPS);
 
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Click on containers ");
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Click on containers ");
 
-		RVMT::SameLine();
-		RVMT::Checkbox("[Enabled]", "[Disabled]", &autoclickerContainerClicks);
+			RVMT::SameLine();
+			RVMT::Checkbox("[Enabled]", "[Disabled]", &autoclickerContainerClicks);
 
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Allowed hotbar slots");
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Allowed hotbar slots");
 
-		for (int i = 0; i < 9; i++) {
-			RVMT::Checkbox("[X] ", "[-] ", &autoclickerAllowedSlots[i]);
-			if (i < 8)
-				RVMT::SameLine();
-		}
+			for (int i = 0; i < 9; i++) {
+				RVMT::Checkbox("[X] ", "[-] ", &autoclickerAllowedSlots[i]);
+				if (i < 8)
+					RVMT::SameLine();
+			}
 
-		// === Rightclicker
-		RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 46);
-        RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
-		RVMT::Text("Rightclicker ");
+			// === Rightclicker
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 46);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 1);
+			RVMT::Text("Rightclicker ");
 
-		RVMT::SameLine();
-		RVMT::Checkbox("[ON]", "[OFF]", &rightclickerEnabled);
+			RVMT::SameLine();
+			RVMT::Checkbox("[ON]", "[OFF]", &rightclickerEnabled);
+			
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+			RVMT::Text("Delay: ");
+
+			// Will make an int slider in future RVMT releases.
+			RVMT::SameLine();
+			RVMT::Slider("delayRCPS_SLIDER slider", 20, 100, 1000, &rightDelay);
+
+			RVMT::SameLine();
+			RVMT::Text(" %.0fms", rightDelay);
+
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Allowed hotbar slots");
+
+			for (int i = 0; i < 9; i++) {
+				RVMT::Checkbox("[X] ", "[-] ", &rightclickerAllowedSlots[i]);
+				if (i < 8)
+					RVMT::SameLine();
+			}
+
+			// === Reach
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 13);
+			RVMT::Text("Reach ");
+
+			RVMT::SameLine();
+			RVMT::Checkbox("[ON]", "[OFF]", &reachEnabled);
+			
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+
+			RVMT::Text("Reach: ");
+
+			RVMT::SameLine();
+			RVMT::Slider("maxReach slider", 18, 3.0, 6.0, &reachVal);
+
+			RVMT::SameLine();
+			RVMT::Text(" %.3f", reachVal);
+
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Only while sprinting ");
+
+			RVMT::SameLine();
+			RVMT::Checkbox("[Enabled]", "[Disabled]", &reachSprintOnly);
+
+			RVMT::SetCursorY(NewCursorPos_ADD, 1);
+			RVMT::Text("Allowed hotbar slots");
+
+			for (int i = 0; i < 9; i++) {
+				RVMT::Checkbox("[X] ", "[-] ", &reachAllowedSlots[i]);
+				if (i < 8)
+					RVMT::SameLine();
+			}
+			break;
 		
-        RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
-		RVMT::Text("Delay: ");
+		case GUIPages_MISC:
+			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 1);
+			RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 0);
+			if (RVMT::Button("Self-Destruct")) {
+				// For people who compiled it from source. | Deletes the whole directory if it's called "wraith".
+				if (std::filesystem::current_path().filename() == "wraith") 
+					std::filesystem::remove_all(std::filesystem::current_path());
 
-		// Will make an int slider in future RVMT releases.
-		RVMT::SameLine();
-		RVMT::Slider("delayRCPS_SLIDER slider", 20, 100, 1000, &rightDelay);
-
-		RVMT::SameLine();
-		RVMT::Text(" %.0fms", rightDelay);
-
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Allowed hotbar slots");
-
-		for (int i = 0; i < 9; i++) {
-			RVMT::Checkbox("[X] ", "[-] ", &rightclickerAllowedSlots[i]);
-			if (i < 8)
-				RVMT::SameLine();
+				else // For people who just downloaded the AppImage. | Delete the binary regardless of the name.
+					std::filesystem::remove(std::filesystem::current_path() / &argv[0][2]);
+				
+				destructing.store(true);
+			};
+			break;
 		}
 
-		// === Reach
-		RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
-        RVMT::SetCursorY(NewCursorPos_ABSOLUTE, 13);
-		RVMT::Text("Reach ");
-
-		RVMT::SameLine();
-		RVMT::Checkbox("[ON]", "[OFF]", &reachEnabled);
-		
-        RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
-
-		RVMT::Text("Reach: ");
-
-		RVMT::SameLine();
-		RVMT::Slider("maxReach slider", 18, 3.0, 6.0, &reachVal);
-
-		RVMT::SameLine();
-		RVMT::Text(" %.3f", reachVal);
-
-        RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Only while sprinting ");
-
-		RVMT::SameLine();
-		RVMT::Checkbox("[Enabled]", "[Disabled]", &reachSprintOnly);
-
-		RVMT::SetCursorY(NewCursorPos_ADD, 1);
-		RVMT::Text("Allowed hotbar slots");
-
-		for (int i = 0; i < 9; i++) {
-			RVMT::Checkbox("[X] ", "[-] ", &reachAllowedSlots[i]);
-			if (i < 8)
-				RVMT::SameLine();
-		}
-
-        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, colCount - 8);
+        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 0);
         RVMT::SetCursorY(NewCursorPos_ABSOLUTE, rowCount - 3);
+		if (RVMT::Button("Combat"))
+			GUIPages_CURRENT = GUIPages_COMBAT;
 
+		RVMT::SameLine();
+		if (RVMT::Button("Misc"))
+			GUIPages_CURRENT = GUIPages_MISC;
+
+		RVMT::SameLine();
+        RVMT::SetCursorX(NewCursorPos_ABSOLUTE, colCount - 8);
         if (RVMT::Button(" Quit "))
             destructing.store(true);
 		
@@ -387,6 +434,12 @@ void reachThreadFunc() {
 
     while (!destructing.load()) {
         if (!reachEnabled) {
+			if (reachAddress != 0xBAD &&
+				blockReachAddress != 0xBAD &&
+				livelinessAddress != 0xBAD) {
+				alma::memWrite(blockReachAddress, varToHex(defaultBlockReach, 8));
+				alma::memWrite(reachAddress, defaultReachMemSig);
+			}
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
@@ -456,11 +509,23 @@ void reachThreadFunc() {
 }
 
 void playerPointerThreadFunc() {
+	// To support a new version:
+	// 1) Find a master signature. Find a reliant way to get to the "pause byte". The rest of the offsets are after this. 
+	// 2) Add the following offsets:
+	//	2.1) gamePausedOffset			|	Byte set to 10 when the game is paused, 0 when not.
+	//	2.2) containerPointerOffset		|	Pointer to the current container.
+	//	2.3) playerStructPointerOffset	|	Pointer to the player's "location" struct
+	//	2.4) hotbarStructPointerOffset	|	Pointer to the player's hotbar struct (Usually near the player's location struct)
+	//	2.5) activeSlotOffset			|	int8 set to the player's active slot.
+	//	2.6) isPlayerSprintingOffset	|	Bool set to the player's sprinting status.
+	// 3) Find memory ranges, for now, there's two:
+	//	3.1) <~2GB: Eight sized addresses.
+	//	3.2) >~2GB: Nine sized addresses. If nine sized, just multiply pointers by 8.
+
 	std::vector<unsigned short> masterSigVec;
 
 	memAddr masterSignatureAddress = 0xBAD;
 
-	memAddr focusPointer = 0xBAD;
 	unsigned char playerStructPointerOffset = 0;
 	unsigned char containerPointerOffset = 0;
 	unsigned char gamePausedOffset = 0;
@@ -478,6 +543,16 @@ void playerPointerThreadFunc() {
                     activeSlotOffset = 12;
                 isPlayerSprintingOffset = 0x34E;
             containerPointerOffset = 0x8C;
+			break;
+
+		case clientType_FORGE2:
+			masterSigVec = {0x89, 0x01, 0x00, 0x00, 0x420, 0x420, 0x420, 0x420, 0x420, 0x420, 0x420, 0x420, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+			gamePausedOffset = 0x30;
+			playerStructPointerOffset = 0x94;
+                hotbarStructPointerOffset = 0x2A4;
+                    activeSlotOffset = 12;
+                isPlayerSprintingOffset = 0x331;
+			containerPointerOffset = 0xB0;
 			break;
 
 		case clientType_LUNAR1:
@@ -512,6 +587,11 @@ void playerPointerThreadFunc() {
 
 			switch (clientType_CURRENT) {
 				case clientType_FORGE1:
+					minLimit = nineSizedAddresses ? 0x6C0000000 : 0xC0000000;
+					maxLimit = nineSizedAddresses ? 0x800000000 : 0xD6000000;
+					break;
+
+				case clientType_FORGE2:
 					minLimit = nineSizedAddresses ? 0x6C0000000 : 0xC0000000;
 					maxLimit = nineSizedAddresses ? 0x800000000 : 0xD6000000;
 					break;
@@ -575,7 +655,7 @@ int random_int(int range_min, int range_max) {
 int randomizer(float cps) {
 	// Randomized enough to not flag. Needs improvement anyway.
 	if (random_float(0, 1) < random_float(0.87, 1))
-		return 500 / random_float(cps - random_float(2.41, 3.34), cps + random_float(2.53, 3.68));
+		return 500 / random_float(cps - random_float(2.41, 3.34), cps + random_float(3.53, 4.68));
 	else
 		return 500 / random_float(cps - random_float(6.44, 8.35), cps - random_float(2.52, 3.81));
 }
