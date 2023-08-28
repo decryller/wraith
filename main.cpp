@@ -1,16 +1,16 @@
 #include "libs/alma/alma.hpp"
 #include "libs/rvmt/rvmt.hpp"
-#include <chrono>
-#include <cmath>
+#include "libs/pcg-cpp/pcg_random.hpp"
+
 #include <thread>
 #include <atomic>
 #include <fstream>
 #include <filesystem>
 #include <random>
-#include "libs/pcg-cpp/pcg_random.hpp"
+#include <X11/Xlib.h>
 
-using RVMT::internal::rootDisplay;
-using RVMT::internal::rootWindow;
+Display* rootDisplay;
+Window rootWindow;
 
 enum clientType {
     clientType_UNKNOWN,
@@ -29,34 +29,14 @@ int __NULLINT;
 unsigned int __NULLUINT;
 unsigned long __NULLULONG;
 
-template <typename varType>
-varType hexToVar(std::vector<unsigned char> bytes) {
-	varType rvalue;
-	
-	for (int i = 0; i < bytes.size(); i++)
-		((unsigned char*)&rvalue)[i] = bytes[i];
-
-	return rvalue;
-};
-
-template <typename varType>
-std::vector<unsigned char> varToHex(varType &var, unsigned int varMemSize) {
-	std::vector<unsigned char> rvalue(varMemSize);
-
-	for (int i = 0; i < varMemSize; i++)
-		rvalue[i] = ((char*)&var)[i];
-
-	return rvalue;
-};
-
-bool autoclickerEnabled = false;
-bool autoclickerContainerClicks = false;
-bool autoclickerAllowedSlots[9];
+bool leftEnabled = false;
+bool leftContainerClicks = false;
+bool leftAllowedSlots[9];
 float lCPS = 10.0;
 
-bool rightclickerEnabled = false;
-bool rightclickerSprintOnly = false;
-bool rightclickerAllowedSlots[9];
+bool rightEnabled = false;
+bool rightSprintOnly = false;
+bool rightAllowedSlots[9];
 float rightDelay = 250;
 
 bool reachEnabled = false;
@@ -71,13 +51,13 @@ bool isGamePaused = false;
 unsigned char activeSlot = 0;
 
 std::atomic<bool> destructing = false;
-std::atomic<bool> autoclickerThreadDone = false;
-std::atomic<bool> rightclickerThreadDone = false;
+std::atomic<bool> leftThreadDone = false;
+std::atomic<bool> rightThreadDone = false;
 std::atomic<bool> reachThreadDone = false;
 std::atomic<bool> playerPtrThreadDone = false;
 
-void autoclickerThreadFunc();
-void rightclickerThreadFunc();
+void leftThreadFunc();
+void rightThreadFunc();
 void reachThreadFunc();
 void playerPointerThreadFunc();
 
@@ -85,7 +65,7 @@ float random_float(float range_min, float range_max);
 int random_int(int range_min, int range_max);
 int randomizer(float cps);
 
-void MouseButtonInstruction(int mouseButton, int instruction);
+void mouseButtonInstruction(int mouseButton, int instruction);
 bool isMouseButtonHeld(unsigned int mouseButton);
 bool isHotbarEnabled(bool* var);
 bool isActiveWindowMinecraft();
@@ -93,10 +73,15 @@ bool isActiveWindowMinecraft();
 enum GUIPages {
 	GUIPages_COMBAT,
 	GUIPages_MISC,
+	GUIPages_SETTINGS,
 };
 GUIPages GUIPages_CURRENT;
 
 int main(int argc, char** argv) {
+	// Start X11 Resources.
+	rootDisplay = XOpenDisplay(NULL);
+	rootWindow = XDefaultRootWindow(rootDisplay);
+
 	// === Check for root privileges.
 	std::ifstream file("/proc/self/status", std::ios::binary | std::ios::in);
 	std::stringstream sstream;
@@ -173,52 +158,46 @@ int main(int argc, char** argv) {
 	}
 
 	// === Check addresses length.
-	std::vector<memoryPage> _StartupProcessPages = alma::getMemoryPages(memoryPermission_NONE, memoryPermission_NONE);
+	std::vector<memoryPage> _STARTUPPROCESSPAGES = alma::getMemoryPages(memoryPermission_NONE, memoryPermission_NONE);
         
-	for (const memoryPage &page : _StartupProcessPages) { 
+	for (const memoryPage &page : _STARTUPPROCESSPAGES) { 
 		if (page.begin >= 0x700000000) {
 			nineSizedAddresses = page.end <= 0x800000000;
 			break;
 		}
 	}
-	_StartupProcessPages.clear();
+	_STARTUPPROCESSPAGES.clear();
 
 	// Launch threads.
 	std::thread playerPointerThread(&playerPointerThreadFunc);
 	playerPointerThread.detach();
 
-	std::thread autoclickerThread(&autoclickerThreadFunc);
-	autoclickerThread.detach();
+	std::thread leftThread(&leftThreadFunc);
+	leftThread.detach();
 
 	std::thread reachThread(&reachThreadFunc);
 	reachThread.detach();
 
-	std::thread rightclickerThread(&rightclickerThreadFunc);
-	rightclickerThread.detach();
+	std::thread rightThread(&rightThreadFunc);
+	rightThread.detach();
 
     RVMT::Start();
+    RVMT::SetTerminalTitle("Wraith v1.0.0");
 	
     while (!destructing.load()) {
-
-    	while (RVMT::renderRequests.size() == 0 && !destructing.load())
-    	    std::this_thread::sleep_for(std::chrono::milliseconds(16));
-		
-        // Consume render request.
-        RVMT::renderRequests.erase(RVMT::renderRequests.begin());
-
-        const unsigned short rowCount = RVMT::internal::rowCount;
-        const unsigned short colCount = RVMT::internal::colCount;
+        RVMT::BeginFrame();
+    	
+        const unsigned short rowCount = RVMT::GetRowCount();
+        const unsigned short colCount = RVMT::GetColCount();
 
 		switch (GUIPages_CURRENT) {
+		static bool noSliders = false;
 		case GUIPages_COMBAT:
 			RVMT::DrawBox(1, 0, 40, 10); // Autoclicker box
-			RVMT::DrawHSeparator(1, 2, 40); // Autoclicker separator
 
 			RVMT::DrawBox(44, 0, 40, 10); // Rightclicker box
-			RVMT::DrawHSeparator(44, 2, 40); // Rightclicker separator
 
 			RVMT::DrawBox(1, 12, 40, 10); // Reach box
-			RVMT::DrawHSeparator(1, 14, 40); // Reach separator
 
 			// === Autoclicker
 			RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 3);
@@ -226,28 +205,49 @@ int main(int argc, char** argv) {
 			RVMT::Text("Autoclicker ");
 
 			RVMT::SameLine();
-			RVMT::Checkbox("[ON]", "[OFF]", &autoclickerEnabled);
+			RVMT::Checkbox("[ON]", "[OFF]", &leftEnabled);
 
-			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Extra padding
 			RVMT::Text("CPS: ");
 
 			RVMT::SameLine();
-			RVMT::Slider("lCPS slider", 20, 10.0, 20.0, &lCPS);
+			
+			if (!noSliders) {
+				RVMT::Slider("lCPS slider", 20, 10.0, 0.5, &lCPS);
+				RVMT::SameLine();
+				RVMT::Text(" %.1f", lCPS);
+			}
 
-			RVMT::SameLine();
-			RVMT::Text(" %.2f", lCPS);
+			else {
+				static char textInputBuffer[8] = "10,0";
+
+				RVMT::SetCursorY(NewCursorPos_SUBTRACT, 1);
+				RVMT::PushPropertyForNextItem(WidgetProp_InputText_Charset, "0123456789,");
+				RVMT::InputText("lCPS field", textInputBuffer, 7, 8);
+
+				RVMT::SameLine();
+
+				if (RVMT::Button("Apply")) {
+					const float newVal = std::stof(&textInputBuffer[0]);
+					lCPS = newVal > 20 ? 20 : newVal < 10 ? 10 : newVal;
+
+					RVMT::SameLine();
+					RVMT::SetCursorY(NewCursorPos_ADD, 1);
+					RVMT::Text("Applied");
+				}
+			}
 
 			RVMT::SetCursorY(NewCursorPos_ADD, 1);
 			RVMT::Text("Click on containers ");
 
 			RVMT::SameLine();
-			RVMT::Checkbox("[Enabled]", "[Disabled]", &autoclickerContainerClicks);
+			RVMT::Checkbox("[Enabled]", "[Disabled]", &leftContainerClicks);
 
 			RVMT::SetCursorY(NewCursorPos_ADD, 1);
 			RVMT::Text("Allowed hotbar slots");
 
 			for (int i = 0; i < 9; i++) {
-				RVMT::Checkbox("[X] ", "[-] ", &autoclickerAllowedSlots[i]);
+				RVMT::Checkbox("[X] ", "[-] ", &leftAllowedSlots[i]);
 				if (i < 8)
 					RVMT::SameLine();
 			}
@@ -258,23 +258,41 @@ int main(int argc, char** argv) {
 			RVMT::Text("Rightclicker ");
 
 			RVMT::SameLine();
-			RVMT::Checkbox("[ON]", "[OFF]", &rightclickerEnabled);
+			RVMT::Checkbox("[ON]", "[OFF]", &rightEnabled);
 			
-			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Extra padding
 			RVMT::Text("Delay: ");
 
-			// Will make an int slider in future RVMT releases.
 			RVMT::SameLine();
-			RVMT::Slider("delayRCPS_SLIDER slider", 20, 100, 1000, &rightDelay);
 
-			RVMT::SameLine();
-			RVMT::Text(" %.0fms", rightDelay);
+			if (!noSliders) {
+				RVMT::Slider("rightDelay slider", 20, 100, 50, &rightDelay);
+
+				RVMT::SameLine();
+				RVMT::Text(" %.0fms", rightDelay);
+			}
+			else {
+				static char textInputBuffer[8] = "250";
+
+				RVMT::SetCursorY(NewCursorPos_SUBTRACT, 1);
+				RVMT::InputText("rightDelay field", textInputBuffer, 7, 8);
+				
+				RVMT::SameLine();
+				if (RVMT::Button("Apply")) {
+					const float newVal = std::stof(&textInputBuffer[0]);
+					rightDelay = newVal > 1100 ? 11000 : newVal < 100 ? 100 : newVal;
+
+					RVMT::SameLine();
+					RVMT::SetCursorY(NewCursorPos_ADD, 1);
+					RVMT::Text("Applied");
+				}
+			}
 
 			RVMT::SetCursorY(NewCursorPos_ADD, 1);
 			RVMT::Text("Allowed hotbar slots");
 
 			for (int i = 0; i < 9; i++) {
-				RVMT::Checkbox("[X] ", "[-] ", &rightclickerAllowedSlots[i]);
+				RVMT::Checkbox("[X] ", "[-] ", &rightAllowedSlots[i]);
 				if (i < 8)
 					RVMT::SameLine();
 			}
@@ -287,15 +305,36 @@ int main(int argc, char** argv) {
 			RVMT::SameLine();
 			RVMT::Checkbox("[ON]", "[OFF]", &reachEnabled);
 			
-			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Jump over separator line.
+			RVMT::SetCursorY(NewCursorPos_ADD, 1); // Extra padding
 
 			RVMT::Text("Reach: ");
 
 			RVMT::SameLine();
-			RVMT::Slider("maxReach slider", 18, 3.0, 6.0, &reachVal);
 
-			RVMT::SameLine();
-			RVMT::Text(" %.3f", reachVal);
+			if (!noSliders) {
+				RVMT::Slider("maxReach slider", 20, 3.0, 0.15, &reachVal);
+				RVMT::SameLine();
+				RVMT::Text(" %.2f", reachVal);
+			}
+			
+			else {
+				static char textInputBuffer[8] = "3,0";
+
+				RVMT::SetCursorY(NewCursorPos_SUBTRACT, 1);
+				RVMT::PushPropertyForNextItem(WidgetProp_InputText_Charset, "0123456789,");
+
+				RVMT::InputText("maxReach field", &textInputBuffer[0], 7, 8);
+				
+				RVMT::SameLine();
+				if (RVMT::Button("Apply")) {
+					const float newVal = std::stof(&textInputBuffer[0]);
+					reachVal = newVal > 6 ? 6 : newVal < 3 ? 3 : newVal;
+
+					RVMT::SameLine();
+					RVMT::SetCursorY(NewCursorPos_ADD, 1);
+					RVMT::Text("Applied");
+				}
+			}
 
 			RVMT::SetCursorY(NewCursorPos_ADD, 1);
 			RVMT::Text("Only while sprinting ");
@@ -327,6 +366,12 @@ int main(int argc, char** argv) {
 				destructing.store(true);
 			};
 			break;
+		case GUIPages_SETTINGS:
+			RVMT::Text("Use input fields instead of sliders ");
+
+			RVMT::SameLine();
+			RVMT::Checkbox("[Enabled]", "[Disabled]", &noSliders);
+			break;
 		}
 
         RVMT::SetCursorX(NewCursorPos_ABSOLUTE, 0);
@@ -339,12 +384,16 @@ int main(int argc, char** argv) {
 			GUIPages_CURRENT = GUIPages_MISC;
 
 		RVMT::SameLine();
+		if (RVMT::Button("Settings"))
+			GUIPages_CURRENT = GUIPages_SETTINGS;
+
+		RVMT::SameLine();
         RVMT::SetCursorX(NewCursorPos_ABSOLUTE, colCount - 8);
         if (RVMT::Button(" Quit "))
             destructing.store(true);
-		
 
         RVMT::Render();
+        RVMT::WaitForNewInput();
     }
 
     // !=== Wait for all threads to finish. ===!
@@ -352,32 +401,34 @@ int main(int argc, char** argv) {
     // === autoclickerThreadDone
     // === rightclickerThreadDone
     // === reachThreadDone
-    while (	!playerPtrThreadDone.load() || !autoclickerThreadDone.load() ||
-			!reachThreadDone.load() || !rightclickerThreadDone.load()) {
+    while (	!playerPtrThreadDone.load() || !leftThreadDone.load() ||
+			!reachThreadDone.load() || !rightThreadDone.load()) {
     	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
+
+	XCloseDisplay(rootDisplay);
 
     RVMT::Stop();
     return 0;
 }
 // === Module functions definition
-void autoclickerThreadFunc() {
+void leftThreadFunc() {
 	while (!destructing.load()) {
 
-		while (!autoclickerEnabled && !destructing.load()) 
+		while (!leftEnabled && !destructing.load()) 
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         if (isMouseButtonHeld(1) && isActiveWindowMinecraft()) {
 			while (isActiveWindowMinecraft() && isMouseButtonHeld(1) && random_float(0.0, 1.0) <= random_float(0.997, 1.0)) {
 				if (isGamePaused ||
-					(!isInContainer && isHotbarEnabled(autoclickerAllowedSlots) && !autoclickerAllowedSlots[activeSlot]) ||
-					(!autoclickerContainerClicks && isInContainer))
+					(!isInContainer && isHotbarEnabled(leftAllowedSlots) && !leftAllowedSlots[activeSlot]) ||
+					(!leftContainerClicks && isInContainer))
 					continue;
 
-				MouseButtonInstruction(1, 1);
+				mouseButtonInstruction(1, 1);
 				std::this_thread::sleep_for(std::chrono::milliseconds(randomizer(lCPS)));
 				
-				MouseButtonInstruction(1, 0);
+				mouseButtonInstruction(1, 0);
 				std::this_thread::sleep_for(std::chrono::milliseconds(randomizer(lCPS)));
 
 			}
@@ -385,25 +436,25 @@ void autoclickerThreadFunc() {
 		std::this_thread::sleep_for(std::chrono::milliseconds(random_int(50, 100)));
 
     }
-	autoclickerThreadDone.store(true);
+	leftThreadDone.store(true);
 }
 
-void rightclickerThreadFunc() {
+void rightThreadFunc() {
 	while (!destructing.load()) {
 
-		while (!rightclickerEnabled && !destructing.load()) 
+		while (!rightEnabled && !destructing.load()) 
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         if (isMouseButtonHeld(2) && isActiveWindowMinecraft()) {
 			while (isActiveWindowMinecraft() && isMouseButtonHeld(2) && random_float(0.0, 1.0) <= random_float(0.997, 1.0)) {
 				if (isGamePaused || isInContainer ||
-					(isHotbarEnabled(rightclickerAllowedSlots) && !rightclickerAllowedSlots[activeSlot]))
+					(isHotbarEnabled(rightAllowedSlots) && !rightAllowedSlots[activeSlot]))
 					continue;
 
-				MouseButtonInstruction(2, 1);
+				mouseButtonInstruction(2, 1);
 				std::this_thread::sleep_for(std::chrono::milliseconds(random_int(40, 60)));
 
-				MouseButtonInstruction(2, 0);
+				mouseButtonInstruction(2, 0);
 				std::this_thread::sleep_for(std::chrono::milliseconds((int)rightDelay + random_int(-60, -40)));
 				
 			}
@@ -411,7 +462,7 @@ void rightclickerThreadFunc() {
 		std::this_thread::sleep_for(std::chrono::milliseconds((int)random_float(50.0, 100.0)));
 
     }
-	rightclickerThreadDone.store(true);
+	rightThreadDone.store(true);
 }
 
 void reachThreadFunc() {
@@ -429,15 +480,17 @@ void reachThreadFunc() {
 
 	std::vector<unsigned char> defaultReachMemSig = 
 		useDoubleReach
-		? varToHex(defaultDoubleReach, 8)
-		: varToHex(defaultFloatReach, 4);
+		? alma::varToHex(defaultDoubleReach, 8)
+		: alma::varToHex(defaultFloatReach, 4);
+	
+	const std::vector<unsigned char> livelinessSig{0x89, 0x84, 0x24, 0x0, 0xc0};
 
     while (!destructing.load()) {
         if (!reachEnabled) {
 			if (reachAddress != 0xBAD &&
 				blockReachAddress != 0xBAD &&
 				livelinessAddress != 0xBAD) {
-				alma::memWrite(blockReachAddress, varToHex(defaultBlockReach, 8));
+				alma::memWrite(blockReachAddress, alma::varToHex(defaultBlockReach, 8));
 				alma::memWrite(reachAddress, defaultReachMemSig);
 			}
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -449,7 +502,6 @@ void reachThreadFunc() {
             const std::vector<unsigned char> livelinessBytes = alma::memRead(livelinessAddress, 5);
             if (livelinessBytes != std::vector<unsigned char>{0x89, 0x84, 0x24, 0x0, 0xc0}) 
                 livelinessAddress = 0xBAD;
-            
         }
 
         // Force reach's address reset until a successful one is found.
@@ -463,14 +515,14 @@ void reachThreadFunc() {
             for (const memoryPage &page : pages) 
 
             // Loop through found block reachs
-            for (const memAddr blockReachResult : alma::patternScanUChar(page.begin, page.end, varToHex(defaultBlockReach, 8)))       
+            for (const memAddr blockReachResult : alma::patternScan(page.begin, page.end, alma::varToHex(defaultBlockReach, 8)))       
             if (blockReachResult != 0xBAD) 
 
             // Loop through found reachs in a 256 range from block reachs' results.
-            for (const memAddr reachResult : alma::patternScanUChar(blockReachResult - 256, blockReachResult + 256, defaultReachMemSig)) 
+            for (const memAddr reachResult : alma::patternScan(blockReachResult - 256, blockReachResult + 256, defaultReachMemSig)) 
             if (reachResult != 0xBAD && livelinessAddress == 0xBAD) {
                 // Search for a liveliness value near the current reach address.
-                const memAddr livelinessResult = alma::patternScan(reachResult - 256, reachResult + 256, {0x89, 0x84, 0x24, 0x0, 0xc0}, 1, 1)[0];
+                const memAddr livelinessResult = alma::patternScan(reachResult - 256, reachResult + 256, livelinessSig, 1, 1)[0];
                 
                 if (livelinessResult != 0xBAD) 
 					blockReachAddress = blockReachResult,
@@ -488,21 +540,21 @@ void reachThreadFunc() {
 			finalReach = defaultFloatReach;
 
 		const double blockReachToWrite = finalReach + 1.5;
-		alma::memWrite(blockReachAddress, varToHex(blockReachToWrite, 8));
+		alma::memWrite(blockReachAddress, alma::varToHex(blockReachToWrite, 8));
 		
 		if (useDoubleReach) { // 1.7.10
 			const double reachToWrite = finalReach;
-        	alma::memWrite(reachAddress, varToHex(reachToWrite, 8));
+        	alma::memWrite(reachAddress, alma::varToHex(reachToWrite, 8));
 		}
 		else { // 1.8.9
 			const float reachToWrite = finalReach;
-        	alma::memWrite(reachAddress, varToHex(reachToWrite, 4));
+        	alma::memWrite(reachAddress, alma::varToHex(reachToWrite, 4));
 		}
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
-	alma::memWrite(blockReachAddress, varToHex(defaultBlockReach, 8));
+	alma::memWrite(blockReachAddress, alma::varToHex(defaultBlockReach, 8));
 	alma::memWrite(reachAddress, defaultReachMemSig);
 
 	reachThreadDone.store(true);
@@ -624,14 +676,14 @@ void playerPointerThreadFunc() {
 			)[0];
 		}
 
-		memAddr playerStructPointer = hexToVar<unsigned int>(alma::memRead(masterSignatureAddress + playerStructPointerOffset, 4));
+		memAddr playerStructPointer = alma::hexToVar<unsigned int>(alma::memRead(masterSignatureAddress + playerStructPointerOffset, 4));
 		if (nineSizedAddresses) playerStructPointer *= 8;
 
-		memAddr hotbarStructAddress = hexToVar<unsigned int>(alma::memRead(playerStructPointer + hotbarStructPointerOffset, 4));
+		memAddr hotbarStructAddress = alma::hexToVar<unsigned int>(alma::memRead(playerStructPointer + hotbarStructPointerOffset, 4));
 		if (nineSizedAddresses) hotbarStructAddress *= 8;
 
 		isPlayerSprinting 	= alma::memRead(playerStructPointer + isPlayerSprintingOffset, 1)[0];
-		isInContainer 		= !isGamePaused && hexToVar<int>(alma::memRead(masterSignatureAddress + containerPointerOffset, 4)) != 0;
+		isInContainer 		= !isGamePaused && alma::hexToVar<int>(alma::memRead(masterSignatureAddress + containerPointerOffset, 4)) != 0;
 		isGamePaused 		= alma::memRead(masterSignatureAddress + gamePausedOffset, 1)[0] == 0x10;
 		
 		activeSlot 			= alma::memRead(hotbarStructAddress + activeSlotOffset, 1)[0];
@@ -661,7 +713,7 @@ int randomizer(float cps) {
 }
 
 // === Misc functions definition
-void MouseButtonInstruction(int mouseButton, int instruction) {
+void mouseButtonInstruction(int mouseButton, int instruction) {
 
     XEvent event;
     event.type = ButtonPress;
@@ -674,7 +726,6 @@ void MouseButtonInstruction(int mouseButton, int instruction) {
 
     if (instruction == 0) 
         event.type = ButtonRelease;
-    
 
     event.xbutton.same_screen = True;
     event.xbutton.subwindow = rootWindow;

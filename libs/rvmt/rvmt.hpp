@@ -1,205 +1,155 @@
 #ifndef RVMT_HPP
 #define RVMT_HPP
 
-#include <vector>
-#include <sstream>
-#include <X11/Xlib.h>
-
 enum BoxStyle {
-    BoxStyle_Simple,
-    BoxStyle_Bold,
-    BoxStyle_DoubleLine,
-    BoxStyle_Round
+	BoxStyle_Simple			= 0,
+	BoxStyle_Bold			= 1,
+	BoxStyle_DoubleLine		= 2,
+	BoxStyle_Round			= 3
 };
 
 enum NewCursorPos {
-    NewCursorPos_ADD        = 0,
-    NewCursorPos_SUBTRACT   = 1,
-    NewCursorPos_ABSOLUTE   = 2
+	NewCursorPos_ADD        = 0,
+	NewCursorPos_SUBTRACT   = 1,
+	NewCursorPos_ABSOLUTE   = 2
 };
 
 enum WidgetProp {
-    WidgetProp_NULL_RVMT_WIDGET_PROPERTY   = 0,
-    WidgetProp_InputText_CustomCharset     = 1,
-    WidgetProp_InputText_IdleText          = 2,
-    WidgetProp_InputText_Censor            = 3,
-    WidgetProp_Button_TextOnly             = 4		
+	WidgetProp_NULL_RVMT_WIDGET_PROPERTY	= 0,
+	WidgetProp_InputText_Charset			= 1,
+	WidgetProp_InputText_Placeholder		= 2,
+	WidgetProp_InputText_Censor				= 3,
+	WidgetProp_Button_TextOnly				= 4		
 };
 
-extern int BoxStyle_Current;
+enum ItemType {
+	ItemType_None		= 0,
+	ItemType_Slider		= 1,
+	ItemType_Button		= 2,
+	ItemType_Checkbox	= 3,
+	ItemType_InputText	= 4
+};
 
 namespace RVMT {
 
-    // All of these variables could perfectly be inside the cpp, but I'd rather put them in an additional
-    // namespace to make debug easier.
-    namespace internal {
-        
-        enum ItemType_ {
-            ItemType_None       = 0,
-            ItemType_Slider     = 1,
-            ItemType_Button     = 2,
-            ItemType_Checkbox   = 3,
-            ItemType_InputText  = 4
-        };
+	// !=== Widgets ===!
+	// === Text
+	// === Checkbox
+	// === Button
+	// === Slider
+	// === InputText
 
-        struct drawableElement {
-            int x = 0;
-            int y = 0;
-            wchar_t ch = 0;
-        };
+	// Prints text.
+	extern void Text(const char* val, ...);
 
-        struct keyPress {
-            char key;
-            const char* field;
+	// Print a checkbox.
+	// When val is true, it will print trueText.
+	// When val is false, it will print falseText.
+	// Returns true if the text is clicked.
+	extern bool Checkbox(const char* trueText, const char* falseText, bool* val);
 
-            keyPress operator=(keyPress from) const {
-                return {from.key, from.field};
-            }
-        };
+	// Print a button.
+	// Uses "BoxStyle_Current" for its style.
+	// Returns true if the box is clicked.
+	extern bool Button(const char* text, ...);
 
-        // I need to tidy this up.
-        extern std::vector<drawableElement> drawList; // Vector of "drawableElement" struct.
-        extern std::vector<std::wstring> canvas; // Map to which drawlist's content will go to
-        extern std::wostringstream preScreen; // Temporal buffer used to print the canvas all at once.
+	// Print a draggable slider.
+	extern void Slider(const char* sliderID, unsigned short ticks, float minVal, float increment, float* var);
 
-        extern unsigned short rowCount; // Terminal's row count (Y Axis).
-        extern unsigned short colCount; // Terminal's column count (X Axis).
+	// Print a text input field.
+	// Returns true if it's clicked
+	extern bool InputText(const char* fieldID, char* val, unsigned int maxStrSize, int width);
 
-        extern int NEWINPUT_MOUSEWINX; // Mouse X Position inside the window.
-        extern int NEWINPUT_MOUSEWINY; // Mouse Y Position inside the window.
+	// !=== Drawing ===!
+	// === DrawString
+	// === DrawBox
+	// === DrawHLine
+	// === DrawVLine
+	// === SetCursorX
+	// === SetCursorY
+	// === SameLine
+	// Functions prefixed by "Draw" do not modify the cursor.
 
-        extern int NEWINPUT_MOUSEROW; // Row the mouse is at.
-        extern int NEWINPUT_MOUSECOL; // Column the mouse is at.
+	// Draws a string without modifying the cursor. Max string length: 4096.
+	// String should be null-terminated.
+	extern void DrawString(unsigned int x, unsigned int y, const char* val);
 
-        extern bool PREVINPUT_MOUSE1HELD; // Past state of NEWINPUT_MOUSE1HELD.
-        extern bool NEWINPUT_MOUSE1HELD; // Is Mouse button 1 being pressed?
+	// Draws a square.
+	// Gets style from BoxStyle_Current.
+	extern void DrawBox(int x, int y, int width, int height);
 
-        extern int NEWINPUT_TERMX; // Terminal's window X Position.
-        extern int NEWINPUT_TERMY; // Terminal's window Y Position.
+	// Draw a horizontal line.
+	extern void DrawHLine(const int x, const int y, const unsigned short width);
 
-        extern unsigned int NEWINPUT_TERMWIDTH; // Terminal's window width.
-        extern unsigned int NEWINPUT_TERMHEIGHT; // Terminal's window height.
+	// Draw a vertical line.
+	extern void DrawVLine(const int x, const int y, const unsigned short height);
 
-        extern unsigned int PREVINPUT_TERMWIDTH; // Terminal's previous window width.
-        extern unsigned int PREVINPUT_TERMHEIGHT; // Terminal's previous window height.
+	// Moves X Cursor.
+	extern void SetCursorX(const NewCursorPos mode, const int value);
 
-        extern int NEWINPUT_CELLWIDTH; // Terminal's Cell width. (Not perfectly accurate)
+	// Moves Y Cursor.
+	extern void SetCursorY(const NewCursorPos mode, const int value);
 
-        extern Display* rootDisplay; // XOpenDisplay(NULL) | Cleared by Stop().
-        extern Window rootWindow; // DefaultRootWindow(rootDisplay)
+	// Move cursor to the previous element's right for the next item.
+	extern void SameLine();
 
-        extern Window termX11Win; // Terminal's X11 Window ID
+	// !=== Misc ===!
+	// === PushPropertyForNextItem
+	// === GetActiveItemType
+	// === GetActiveItemID
+	// === GetColCount
+	// === GetRowCount
+	// === GetBoxStyle
+	// === SetBoxStyle
+	// === SetTerminalTitle
+	// === WaitForNewInput
+	// === Render
+	// === Start
+	// === Stop
 
-        extern bool sameLineCalled;
-        extern bool sameLinedPreviousItem;
-        extern int sameLineX;
-        extern int sameLineY;
+	// Push a property for the next widget.
+	extern void PushPropertyForNextItem(const WidgetProp property);
 
-        extern int sameLineXRevert;
-        extern int sameLineYRevert;
+	// Push a property for the next widget along with an int.
+	extern void PushPropertyForNextItem(const WidgetProp property, const int value);
 
-        extern ItemType_ activeItemType;
-        extern const char* activeItemID;
+	// Push a property for the next widget along with a string.
+	extern void PushPropertyForNextItem(const WidgetProp property, const char* value);
 
-        extern bool startCalled;
-        extern bool stopCalled; // Used to notify threads to exit their main loops.
+	// Get active Item type. (See ItemType enum)
+	extern ItemType GetActiveItemType();
 
-        extern std::vector<keyPress> KEYPRESSES;
+	// Get active Item ID. If the item has no ID, "none" will be returned.
+	extern const char* GetActiveItemID();
 
-        extern int cursorX;
-        extern int cursorY;
+	// Get total columns count that are being currently displayed.
+	extern unsigned short GetColCount();
 
-        // Set cursor's position.
-        void InternalSetCursor(char axis, NewCursorPos mode, int value);
-    }
+	// Get total rows count that are being currently displayed.
+	extern unsigned short GetRowCount();
+	
+	// Get current Box style.
+	extern BoxStyle GetBoxStyle();
 
-    extern std::vector<bool> renderRequests;
+	// Set a new Box style.
+	extern void SetBoxStyle(const BoxStyle newStyle);
 
-    // !=== Widgets ===!
-    // === Texts
-    // === Checkbox
-    // === Button
-    // === Slider
-    // === InputText
+	// Set terminal's title.
+	extern void SetTerminalTitle(const char* str);
+	
+	// Stall the calling thread until a new input is detected.
+	extern void WaitForNewInput();
 
-    // Prints text.
-    void Text(const char* val, ...);
+	// Prepare internal stuff for a new frame.
+	extern void BeginFrame();
 
-    // Print a checkbox.
-    // When val is false, it will print falseText.
-    // When val is true, it will print trueText.
-    // Returns true if the text is clicked.
-    bool Checkbox(const char* trueText, const char* falseText, bool* val);
+	// Render canvas' content.
+	extern void Render();
 
-    // Print a button.
-    // Uses "BoxStyle_Current" for its style.
-    // Returns true if the box is clicked.
-    bool Button(const char* text, ...);
+	// Set up required settings in order for RVMT to work properly.
+	extern void Start();
 
-    // Print a draggable slider.
-    // Returns true if it's clicked
-    bool Slider(const char* sliderID, int length, float minVal, float maxVal, float* var);
-
-    // Print a text input field.
-    // Returns true if it's clicked
-    bool InputText(const char* fieldID, char* val, unsigned int maxStrSize, int width);
-
-    // !=== Drawing ===!
-    // === DrawText
-    // === DrawBox
-    // === DrawHSeparator
-    // === DrawVSeparator
-    // === SetCursorX
-    // === SetCursorY
-    // === SameLine
-
-    // Draws text without modifying the cursor.
-    // Returns final text length
-    void DrawText(int x, int y, const char* val);
-
-    // Draw a box.
-    // Does not modify the cursor.
-    // Gets style from BoxStyle_Current.
-    void DrawBox(int x, int y, int width, int height);
-
-    // Draw a horizontal separator.
-    // Does not modify the cursor.
-    // Gets style from BoxStyle_Current.
-    void DrawHSeparator(int x, int y, int width);
-
-    // Draw a vertical separator.
-    // Does not modify the cursor.
-    // Gets style from BoxStyle_Current.
-    void DrawVSeparator(int x, int y, int height);
-
-    // Moves X Cursor.
-    void SetCursorX(NewCursorPos mode, int value);
-
-    // Moves Y Cursor.
-    void SetCursorY(NewCursorPos mode, int value);
-
-    // Move cursor to the previous element's right.
-    void SameLine();
-    
-    // !=== Misc ===!
-    void PushPropertyForNextItem(WidgetProp property);
-    void PushPropertyForNextItem(WidgetProp property, int value);
-    void PushPropertyForNextItem(WidgetProp property, const char* value);
-
-    // !=== Internal ===!
-    // === Render
-    // === Start
-    // === Stop
-    // === InternalSetCursor is located at internal namespace
-
-    // Render drawlist's contents.
-    void Render();
-
-    // Start.
-    // RVMT will treat the window that is focused when this function gets called as the main window.
-    void Start();
-
-    // Stop.
-    void Stop();
+	// Stop.
+	extern void Stop();
 }
 #endif
