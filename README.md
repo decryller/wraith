@@ -1,4 +1,3 @@
-**Any actions taken based on the provided code, binaries and guidance herein are undertaken at the sole discretion and responsibility of the individual who performs them**
 ## About Wraith
 Wraith is an open source fully external Minecraft Ghost Client for Linux.\
 Memory operations powered by [alma](https://github.com/decryller/alma)\
@@ -22,7 +21,7 @@ RNG powered by [pcg-cpp](https://github.com/imneme/pcg-cpp)
 ### Downloading Wraith
 **Quick Way:**
 ```
-curl -LJ0 https://github.com/decryller/wraith/releases/download/v1.0a/wraith.AppImage -o wraith.AppImage
+curl -LJ0 https://github.com/decryller/wraith/releases/download/v1.0.0/wraith.AppImage -o wraith.AppImage
 chmod +x wraith.AppImage
 ```
 **Compiling from source:** 
@@ -46,6 +45,10 @@ The session's opening and closing dates will be stored in the journals, but comm
 ![switching user to root](https://i.imgur.com/FeSFzRD.png)
 ![no traces of wraith](https://i.imgur.com/i7ZFyXs.png)
 
+**As an additional measure, I highly encourage you to go through the [bypassing page](https://github.com/decryller/wraith/wiki/Bypassing) on Wraith's wiki.**
+
+### Contribute
+There are many ways you can contribute to this project. [Check out the wiki page for contributing here](https://github.com/decryller/wraith/wiki/Contributing).
 ### Contact
 E-mail: decryller@gmail.com\
 Discord: decryller
